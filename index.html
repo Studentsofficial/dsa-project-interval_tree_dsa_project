@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MemSys — Memory Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Syne:wght@400;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:       #0a0c10;
+      --surface:  #111318;
+      --border:   #1e2330;
+      --accent:   #00e5ff;
+      --success:  #00ff9d;
+      --error:    #ff3b6b;
+      --warn:     #ffb800;
+      --text:     #c8d0e0;
+      --text-dim: #5a6070;
+      --mono:     'Share Tech Mono', monospace;
+      --sans:     'Syne', sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--text); font-family: var(--sans);
+      min-height: 100vh; display: flex; flex-direction: column;
+      align-items: center; padding: 2rem 1rem 4rem;
+      background-image: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,229,255,0.015) 2px,rgba(0,229,255,0.015) 4px);
+    }
+    header {
+      width:100%; max-width:960px; border-bottom:1px solid var(--border);
+      padding-bottom:1.2rem; margin-bottom:2rem;
+      display:flex; align-items:baseline; gap:1rem;
+    }
+    header h1 { font-size:2rem; font-weight:800; letter-spacing:-0.03em; color:#fff; }
+    header h1 span { color:var(--accent); }
+    header p { font-family:var(--mono); font-size:0.72rem; color:var(--text-dim); letter-spacing:0.08em; }
+    .status-dot {
+      width:8px; height:8px; border-radius:50%; background:var(--success);
+      box-shadow:0 0 6px var(--success); display:inline-block; margin-right:0.4rem;
+      animation:pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .main { width:100%; max-width:960px; display:grid; grid-template-columns:1fr 1.6fr; gap:1.5rem; }
+    @media(max-width:720px){ .main{grid-template-columns:1fr;} }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1.5rem; }
+    .card-title { font-family:var(--mono); font-size:0.68rem; letter-spacing:0.15em; color:var(--accent); text-transform:uppercase; margin-bottom:1.2rem; }
+    .section-sep { border:none; border-top:1px solid var(--border); margin:1.2rem 0; }
+    .section-label { font-family:var(--mono); font-size:0.65rem; color:var(--text-dim); letter-spacing:0.12em; text-transform:uppercase; margin-bottom:0.8rem; }
+    .field { margin-bottom:0.9rem; }
+    .field label { display:block; font-family:var(--mono); font-size:0.72rem; color:var(--text-dim); letter-spacing:0.08em; margin-bottom:0.35rem; }
+    .field input, .field select {
+      width:100%; background:var(--bg); border:1px solid var(--border); border-radius:4px;
+      color:var(--text); font-family:var(--mono); font-size:0.92rem;
+      padding:0.6rem 0.8rem; outline:none; transition:border-color 0.2s;
+      -webkit-appearance:none; appearance:none;
+    }
+    .field input:focus, .field select:focus { border-color:var(--accent); box-shadow:0 0 0 2px rgba(0,229,255,0.1); }
+    .field input::placeholder { color:var(--text-dim); }
+    .field select option { background:#1a1d24; }
+    .cap-hint { font-family:var(--mono); font-size:0.68rem; color:var(--text-dim); margin-top:0.3rem; }
+    .cap-hint span { color:var(--accent); }
+    .end-preview { font-family:var(--mono); font-size:0.72rem; color:var(--text-dim); margin-top:0.3rem; }
+    .end-preview span { color:var(--accent); }
+    .btn-group { display:flex; flex-direction:column; gap:0.6rem; margin-top:1rem; }
+    .btn {
+      width:100%; border:none; border-radius:4px; font-family:var(--mono);
+      font-size:0.85rem; letter-spacing:0.06em; padding:0.7rem 1rem;
+      cursor:pointer; transition:opacity 0.15s,transform 0.1s;
+    }
+    .btn:active { transform:scale(0.98); }
+    .btn-primary { background:var(--accent); color:#000; font-weight:700; }
+    .btn-danger  { background:transparent; border:1px solid var(--error); color:var(--error); }
+    .btn-ghost   { background:transparent; border:1px solid var(--border); color:var(--text-dim); }
+    .btn:hover   { opacity:0.85; }
+    .btn:disabled { opacity:0.35; cursor:not-allowed; }
+    #toast {
+      position:fixed; top:1.2rem; right:1.2rem; max-width:340px;
+      padding:0.9rem 1.1rem; border-radius:6px; font-family:var(--mono);
+      font-size:0.8rem; line-height:1.5; z-index:999;
+      opacity:0; transform:translateY(-8px); transition:opacity 0.25s,transform 0.25s; pointer-events:none;
+    }
+    #toast.show { opacity:1; transform:translateY(0); }
+    #toast.success { background:rgba(0,255,157,0.12); border:1px solid var(--success); color:var(--success); }
+    #toast.error   { background:rgba(255,59,107,0.12); border:1px solid var(--error);  color:var(--error); }
+    #toast.warn    { background:rgba(255,184,0,0.12);  border:1px solid var(--warn);   color:var(--warn); }
+    #conflict-box {
+      display:none; margin-bottom:1rem; padding:0.8rem 1rem; border-radius:4px;
+      border:1px solid var(--error); background:rgba(255,59,107,0.08);
+      font-family:var(--mono); font-size:0.78rem; color:var(--error); line-height:1.6;
+    }
+    .cap-bar-wrap { margin-bottom:1.4rem; }
+    .cap-bar-label {
+      font-family:var(--mono); font-size:0.68rem; color:var(--text-dim);
+      letter-spacing:0.1em; margin-bottom:0.5rem;
+      display:flex; justify-content:space-between; align-items:center;
+    }
+    .cap-bar-outer { width:100%; height:10px; background:var(--bg); border:1px solid var(--border); border-radius:99px; overflow:hidden; }
+    .cap-bar-inner { height:100%; width:0%; background:var(--success); border-radius:99px; transition:width 0.4s,background 0.4s; }
+    .cap-bar-inner.warn   { background:var(--warn); }
+    .cap-bar-inner.danger { background:var(--error); }
+    .mem-map-wrap { margin-bottom:1.2rem; }
+    .mem-map-label { font-family:var(--mono); font-size:0.68rem; color:var(--text-dim); letter-spacing:0.1em; margin-bottom:0.5rem; display:flex; justify-content:space-between; }
+    .mem-bar { width:100%; height:28px; background:var(--bg); border:1px solid var(--border); border-radius:4px; position:relative; overflow:hidden; }
+    .mem-segment {
+      position:absolute; top:0; height:100%; display:flex; align-items:center;
+      justify-content:center; font-family:var(--mono); font-size:0.62rem;
+      color:#000; font-weight:700; overflow:hidden; white-space:nowrap;
+      cursor:default; transition:filter 0.2s; border-right:1px solid var(--bg);
+    }
+    .mem-segment:hover { filter:brightness(1.2); }
+    .mem-map-axis { display:flex; justify-content:space-between; font-family:var(--mono); font-size:0.62rem; color:var(--text-dim); margin-top:0.3rem; }
+    .stats { display:flex; gap:0.8rem; margin-top:1rem; margin-bottom:1.2rem; }
+    .stat { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:4px; padding:0.6rem; text-align:center; }
+    .stat-value { font-family:var(--mono); font-size:1.1rem; color:var(--accent); }
+    .stat-label { font-family:var(--mono); font-size:0.6rem; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.08em; margin-top:0.1rem; }
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; font-family:var(--mono); font-size:0.78rem; }
+    thead th { text-align:left; color:var(--text-dim); letter-spacing:0.08em; font-size:0.65rem; text-transform:uppercase; padding:0.4rem 0.6rem; border-bottom:1px solid var(--border); }
+    tbody tr { border-bottom:1px solid rgba(30,35,48,0.5); transition:background 0.15s; }
+    tbody tr:hover { background:rgba(0,229,255,0.04); }
+    tbody td { padding:0.55rem 0.6rem; color:var(--text); }
+    .pid-badge { display:inline-block; padding:0.15rem 0.45rem; border-radius:3px; font-size:0.72rem; }
+    .free-btn { background:transparent; border:1px solid var(--error); color:var(--error); font-family:var(--mono); font-size:0.7rem; padding:0.2rem 0.5rem; border-radius:3px; cursor:pointer; transition:background 0.15s; }
+    .free-btn:hover { background:rgba(255,59,107,0.15); }
+    .empty-state { text-align:center; padding:2rem 0; color:var(--text-dim); font-family:var(--mono); font-size:0.8rem; }
+    .empty-state .icon { font-size:2rem; margin-bottom:0.5rem; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1><span>Mem</span>Sys</h1>
+  </div>
+</header>
+
+<div class="main">
+  <div class="card">
+
+    <div class="section-label">Memory Capacity</div>
+    <div class="field">
+      <label>TOTAL CAPACITY</label>
+      <input type="number" id="capacity" placeholder="e.g. 8192" min="1" value="8192" />
+      <div class="cap-hint">Free: <span id="cap-available">8192</span> bytes remaining</div>
+    </div>
+
+    <hr class="section-sep" />
+
+    <div class="section-label">Allocate Memory</div>
+    <div class="field">
+      <label>START ADDRESS</label>
+      <input type="number" id="start" placeholder="e.g. 1000" min="0" />
+    </div>
+    <div class="field">
+      <label>OFFSET </label>
+      <input type="number" id="offset" placeholder="e.g. 512" min="1" />
+      <div class="end-preview">end_address = <span id="end-preview">—</span></div>
+    </div>
+    <div class="field">
+      <label>PROCESS ID</label>
+      <input type="text" id="pid" placeholder="e.g. P1 or chrome" />
+    </div>
+    <button class="btn btn-primary" onclick="allocate()">▶ ALLOCATE MEMORY</button>
+
+    <hr class="section-sep" />
+
+    <div class="section-label">Free Memory</div>
+    <div class="field">
+      <label>SELECT PROCESS TO FREE</label>
+      <select id="free-pid-select">
+        <option value="">— no active processes —</option>
+      </select>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-danger" id="free-btn" onclick="freeSelected()" disabled>✕ FREE SELECTED PROCESS</button>
+      <button class="btn btn-ghost"  onclick="resetAll()">↺ RESET ALL</button>
+    </div>
+  </div>
+
+  <div class="card">
+
+    <div id="conflict-box"></div>
+
+    <div class="cap-bar-wrap">
+      <div class="cap-bar-label">
+        <span>CAPACITY USAGE</span>
+        <span id="cap-pct">0 / 8192 bytes (0%)</span>
+      </div>
+      <div class="cap-bar-outer">
+        <div class="cap-bar-inner" id="cap-bar-inner"></div>
+      </div>
+    </div>
+
+    <div class="mem-map-wrap">
+      <div class="mem-map-label">
+        <span>ADDRESS SPACE</span>
+        <span id="used-pct">—</span>
+      </div>
+      <div class="mem-bar" id="mem-bar"></div>
+      <div class="mem-map-axis">
+        <span id="axis-min">0</span>
+        <span id="axis-max">—</span>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="stat-value" id="stat-count">0</div><div class="stat-label">Processes</div></div>
+      <div class="stat"><div class="stat-value" id="stat-bytes">0</div><div class="stat-label">Used Bytes</div></div>
+      <div class="stat"><div class="stat-value" id="stat-free">8192</div><div class="stat-label">Free Bytes</div></div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>PID</th><th>Start</th><th>End</th><th>Offset</th><th>Action</th></tr></thead>
+        <tbody id="alloc-table-body">
+          <tr><td colspan="5"><div class="empty-state"><div class="icon">⬜</div>No active allocations</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  var API = "http://localhost:5000";
+  var COLORS = ["#00e5ff","#00ff9d","#ffb800","#ff6b35","#b44fff","#ff3b6b","#3bffd8","#ffe53b"];
+  var colorIndex = 0;
+  var pidColors  = {};
+  var _currentAllocs = [];
+
+  function getColor(pid) {
+    if (!pidColors[pid]) { pidColors[pid] = COLORS[colorIndex % COLORS.length]; colorIndex++; }
+    return pidColors[pid];
+  }
+
+  document.getElementById("start").addEventListener("input", updatePreview);
+  document.getElementById("offset").addEventListener("input", updatePreview);
+  function updatePreview() {
+    var s = parseInt(document.getElementById("start").value);
+    var o = parseInt(document.getElementById("offset").value);
+    document.getElementById("end-preview").textContent = (!isNaN(s) && !isNaN(o) && o > 0) ? (s + o) : "—";
+  }
+
+  document.getElementById("capacity").addEventListener("input", function() {
+    renderAllocations(_currentAllocs);
+  });
+
+  var toastTimer;
+  function showToast(msg, type) {
+    type = type || "success";
+    var t = document.getElementById("toast");
+    t.textContent = msg; t.className = "show " + type;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.className = ""; }, 3500);
+  }
+
+  function showConflict(msg) {
+    var b = document.getElementById("conflict-box");
+    b.innerHTML = msg; b.style.display = "block";
+  }
+  function clearConflict() { document.getElementById("conflict-box").style.display = "none"; }
+
+  async function allocate() {
+    clearConflict();
+    var start    = parseInt(document.getElementById("start").value);
+    var offset   = parseInt(document.getElementById("offset").value);
+    var pid      = document.getElementById("pid").value.trim();
+    var capacity = parseInt(document.getElementById("capacity").value) || 0;
+
+    if (isNaN(start) || isNaN(offset) || !pid) { showToast("Fill in Start Address, Offset and Process ID.", "warn"); return; }
+    if (offset <= 0) { showToast("Offset must be greater than zero.", "warn"); return; }
+
+    var usedBytes = _currentAllocs.reduce(function(s,a){ return s + a.offset; }, 0);
+    if (capacity > 0 && (usedBytes + offset) > capacity) {
+      showToast("Not enough memory capacity!", "error");
+      showConflict("Requested " + offset + " bytes but only " + (capacity - usedBytes) + " bytes free.");
+      return;
+    }
+
+    try {
+      var res  = await fetch(API + "/allocate", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ start_address: start, offset: offset, process_id: pid })
+      });
+      var data = await res.json();
+      if (data.success) {
+        showToast("✓ " + data.message, "success");
+        document.getElementById("start").value  = "";
+        document.getElementById("offset").value = "";
+        document.getElementById("pid").value    = "";
+        document.getElementById("end-preview").textContent = "—";
+        refreshStatus();
+      } else {
+        var msg = "⚠ " + data.error;
+        if (data.conflict_pid)   msg += "<br>Conflicting process: <strong>" + data.conflict_pid + "</strong>";
+        if (data.conflict_range) msg += "<br>Conflict range: [" + data.conflict_range[0] + ", " + data.conflict_range[1] + "]";
+        showToast("✗ " + data.error, "error");
+        showConflict(msg);
+      }
+    } catch(e) { showToast("Cannot reach Flask server. Is it running?", "error"); }
+  }
+
+  async function freeSelected() {
+    var pid = document.getElementById("free-pid-select").value;
+    if (!pid) { showToast("Select a process to free.", "warn"); return; }
+    await doFree(pid);
+  }
+
+  async function freeMemory(pid) { await doFree(pid); }
+
+  async function doFree(pid) {
+    clearConflict();
+    try {
+      var res  = await fetch(API + "/free", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ process_id: pid })
+      });
+      var data = await res.json();
+      if (data.success) {
+        delete pidColors[pid];
+        showToast("✓ " + data.message, "success");
+        refreshStatus();
+      } else {
+        showToast("✗ " + data.error, "error");
+      }
+    } catch(e) { showToast("Cannot reach Flask server.", "error"); }
+  }
+
+  async function resetAll() {
+    if (!confirm("Reset ALL allocations?")) return;
+    clearConflict();
+    try {
+      await fetch(API + "/reset", { method:"POST" });
+      colorIndex = 0; pidColors = {};
+      showToast("↺ All allocations cleared.", "warn");
+      refreshStatus();
+    } catch(e) { showToast("Cannot reach Flask server.", "error"); }
+  }
+
+  async function refreshStatus() {
+    try {
+      var res  = await fetch(API + "/status");
+      var data = await res.json();
+      _currentAllocs = data.allocations || [];
+      renderAllocations(_currentAllocs);
+    } catch(e) {}
+  }
+
+  function renderAllocations(allocs) {
+    var tbody    = document.getElementById("alloc-table-body");
+    var bar      = document.getElementById("mem-bar");
+    var capacity = parseInt(document.getElementById("capacity").value) || 0;
+    var usedBytes = allocs.reduce(function(s,a){ return s + a.offset; }, 0);
+    var freeBytes = Math.max(0, capacity - usedBytes);
+
+    document.getElementById("stat-count").textContent = allocs.length;
+    document.getElementById("stat-bytes").textContent = usedBytes.toLocaleString();
+    document.getElementById("stat-free").textContent  = freeBytes.toLocaleString();
+    document.getElementById("cap-available").textContent = freeBytes.toLocaleString();
+
+    var capPct = capacity > 0 ? Math.min(100, Math.round((usedBytes / capacity) * 100)) : 0;
+    var capBar = document.getElementById("cap-bar-inner");
+    capBar.style.width = capPct + "%";
+    capBar.className   = "cap-bar-inner" + (capPct >= 90 ? " danger" : capPct >= 70 ? " warn" : "");
+    document.getElementById("cap-pct").textContent =
+      usedBytes.toLocaleString() + " / " + capacity.toLocaleString() + " bytes (" + capPct + "%)";
+
+    var sel = document.getElementById("free-pid-select");
+    var prevVal = sel.value;
+    if (allocs.length === 0) {
+      sel.innerHTML = '<option value="">— no active processes —</option>';
+    } else {
+      sel.innerHTML = allocs.map(function(a) {
+        return '<option value="' + a.process_id + '">' +
+          a.process_id + '  [' + a.start + ' \u2013 ' + a.end + ']  (' + a.offset + ' bytes)</option>';
+      }).join("");
+      if (prevVal && allocs.find(function(a){ return a.process_id === prevVal; })) sel.value = prevVal;
+    }
+    document.getElementById("free-btn").disabled = allocs.length === 0;
+
+    if (allocs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="icon">⬜</div>No active allocations</div></td></tr>';
+      bar.innerHTML = ""; document.getElementById("used-pct").textContent = "—";
+      document.getElementById("axis-min").textContent = "0"; document.getElementById("axis-max").textContent = "—";
+      return;
+    }
+
+    var minAddr = Math.min.apply(null, allocs.map(function(a){ return a.start; }));
+    var maxAddr = Math.max.apply(null, allocs.map(function(a){ return a.end; }));
+    var span    = maxAddr - minAddr || 1;
+    document.getElementById("axis-min").textContent = minAddr;
+    document.getElementById("axis-max").textContent = maxAddr;
+    document.getElementById("used-pct").textContent = capPct + "% of capacity used";
+
+    bar.innerHTML = "";
+    allocs.forEach(function(a) {
+      var color = getColor(a.process_id);
+      var seg   = document.createElement("div");
+      seg.className        = "mem-segment";
+      seg.style.left       = ((a.start - minAddr) / span * 100) + "%";
+      seg.style.width      = Math.max(a.offset / span * 100, 1) + "%";
+      seg.style.background = color;
+      seg.title            = a.process_id + ": [" + a.start + ", " + a.end + "]";
+      seg.textContent      = a.process_id;
+      bar.appendChild(seg);
+    });
+
+    tbody.innerHTML = allocs.map(function(a) {
+      var color = getColor(a.process_id);
+      return '<tr>' +
+        '<td><span class="pid-badge" style="background:' + color + '20;color:' + color + ';border:1px solid ' + color + '40">' + a.process_id + '</span></td>' +
+        '<td>' + a.start + '</td><td>' + a.end + '</td><td>' + a.offset + '</td>' +
+        '<td><button class="free-btn" onclick="freeMemory(\'' + a.process_id + '\')">FREE</button></td>' +
+        '</tr>';
+    }).join("");
+  }
+
+  refreshStatus();
+  setInterval(refreshStatus, 5000);
+</script>
+</body>
+</html>
