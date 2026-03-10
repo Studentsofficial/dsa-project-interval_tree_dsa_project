@@ -82,8 +82,21 @@ def clear_all_allocations():
 # ─── C++ INTERVAL TREE BRIDGE ─────────────────────────────────────────────────
 
 def call_cpp_interval_tree(command, args):
+    """
+    Call the C++ interval tree binary.
+
+    For `check` and `status`, Flask appends all current allocations as
+    trailing arg pairs (start end start end ...) so the C++ binary can
+    rebuild the tree in memory — no SQLite dependency needed in C++.
+    """
     binary = os.environ.get("CPP_BINARY", "./interval_tree_cli")
     cmd = [binary, command] + [str(a) for a in args]
+
+    # Append existing intervals as flat pairs so C++ can build its tree
+    if command in ("check", "status"):
+        for alloc in get_all_allocations():
+            cmd += [str(alloc["start"]), str(alloc["end"])]
+
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
         return json.loads(result.stdout)

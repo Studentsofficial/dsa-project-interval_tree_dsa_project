@@ -2,7 +2,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
-#include "sqlite3.h"
+#include <cstdlib>
 using namespace std;
 
 
@@ -66,35 +66,10 @@ private:
         collect(node->right, out);
     }
 
-    Node* removeNode(Node* node, int l, int h) {
-        if (!node) return NULL;
-        if (node->i.low == l && node->i.high == h) {
-            vector<Node*> rest;
-            collect(node->left,  rest);
-            collect(node->right, rest);
-            delete node;
-            Node* newRoot = NULL;
-            for (int i = 0; i < (int)rest.size(); i++) {
-                newRoot = insert(newRoot, rest[i]->i.low, rest[i]->i.high);
-                delete rest[i];
-            }
-            return newRoot;
-        }
-        if (l < node->i.low)
-            node->left  = removeNode(node->left,  l, h);
-        else
-            node->right = removeNode(node->right, l, h);
-        node->max = node->i.high;
-        if (node->left)  node->max = max(node->max, node->left->max);
-        if (node->right) node->max = max(node->max, node->right->max);
-        return node;
-    }
-
 public:
     IntervalTree() : root(NULL) {}
 
     void insert(int l, int h) { root = insert(root, l, h); }
-    void remove(int l, int h) { root = removeNode(root, l, h); }
 
     OverlapResult checkOverlap(int l, int h) {
         OverlapResult res;
@@ -122,37 +97,16 @@ public:
 };
 
 
-// ─── SQLITE HELPERS ──────────────────────────────────────────────────────────
+// ─── HELPER: build tree from argv pairs starting at index `from` ──────────────
 
-const string DB_FILE = "intervals.db";
-
-/**
- * Open intervals.db and rebuild the IntervalTree from the allocations table.
- * Python/Flask owns all writes to the DB; this function is read-only.
- */
-IntervalTree loadFromDB() {
+IntervalTree buildTreeFromArgs(int argc, char* argv[], int from) {
     IntervalTree tree;
-    sqlite3* db = NULL;
-
-    if (sqlite3_open(DB_FILE.c_str(), &db) != SQLITE_OK) {
-        // Can't open DB — return empty tree (safe fallback)
-        if (db) sqlite3_close(db);
-        return tree;
+    // args come in pairs: low high low high ...
+    for (int i = from; i + 1 < argc; i += 2) {
+        int l = atoi(argv[i]);
+        int h = atoi(argv[i + 1]);
+        tree.insert(l, h);
     }
-
-    sqlite3_stmt* stmt = NULL;
-    const char*   sql  = "SELECT start, end FROM allocations";
-
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK) {
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-            int l = sqlite3_column_int(stmt, 0);
-            int h = sqlite3_column_int(stmt, 1);
-            tree.insert(l, h);
-        }
-        sqlite3_finalize(stmt);
-    }
-
-    sqlite3_close(db);
     return tree;
 }
 
@@ -167,7 +121,8 @@ int main(int argc, char* argv[]) {
 
     string cmd = argv[1];
 
-    // ── check low high ──────────────────────────────────────────────────────
+    // ── check low high [l1 h1 l2 h2 ...] ────────────────────────────────────
+    // Flask passes all currently-allocated intervals as trailing arg pairs.
     if (cmd == "check") {
         if (argc < 4) {
             cout << "{\"error\":\"check requires low high\"}" << endl;
@@ -175,7 +130,7 @@ int main(int argc, char* argv[]) {
         }
         int l = atoi(argv[2]), h = atoi(argv[3]);
 
-        IntervalTree  tree = loadFromDB();
+        IntervalTree  tree = buildTreeFromArgs(argc, argv, 4);
         OverlapResult res  = tree.checkOverlap(l, h);
 
         if (res.overlaps) {
@@ -189,8 +144,8 @@ int main(int argc, char* argv[]) {
     }
 
     // ── insert low high ─────────────────────────────────────────────────────
-    // Persistence is handled entirely by Flask/Python (insert_allocation).
-    // The C++ binary no longer writes state; just acknowledge success.
+    // Persistence is handled entirely by Flask/Python.
+    // The C++ binary just acknowledges.
     if (cmd == "insert") {
         if (argc < 4) {
             cout << "{\"error\":\"insert requires low high\"}" << endl;
@@ -201,7 +156,7 @@ int main(int argc, char* argv[]) {
     }
 
     // ── remove low high ─────────────────────────────────────────────────────
-    // Persistence is handled entirely by Flask/Python (delete_allocation).
+    // Persistence is handled entirely by Flask/Python.
     if (cmd == "remove") {
         if (argc < 4) {
             cout << "{\"error\":\"remove requires low high\"}" << endl;
@@ -211,10 +166,11 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    // ── status ──────────────────────────────────────────────────────────────
+    // ── status [l1 h1 l2 h2 ...] ────────────────────────────────────────────
+    // Flask passes all currently-allocated intervals as trailing arg pairs.
     if (cmd == "status") {
-        IntervalTree             tree      = loadFromDB();
-        vector<pair<int,int> >   intervals = tree.getAllIntervals();
+        IntervalTree           tree      = buildTreeFromArgs(argc, argv, 2);
+        vector<pair<int,int> > intervals = tree.getAllIntervals();
 
         cout << "{\"intervals\":[";
         for (int i = 0; i < (int)intervals.size(); i++) {

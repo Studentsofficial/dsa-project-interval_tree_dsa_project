@@ -19,13 +19,17 @@ It's a full-stack DSA project — the C++ does the heavy lifting, Flask acts as 
 ```
 Browser UI  →  Flask API  →  C++ Interval Tree
    (HTML)        (Python)       (interval_tree_cli.exe)
+                   ↕
+               SQLite DB
+             (intervals.db)
 ```
 
 1. You enter a **start address**, **offset (size)**, and **process ID** in the UI
 2. The UI sends a request to Flask
-3. Flask calls the C++ binary to check if the range `[start, start+offset]` overlaps with anything already allocated
-4. If no overlap → memory is allocated and saved
-5. If overlap → request is rejected and you see exactly which process caused the conflict
+3. Flask reads the current allocations from `intervals.db` and passes them to the C++ binary as command-line arguments
+4. The C++ binary builds the interval tree in memory and checks for overlaps — no DB access needed
+5. If no overlap → Flask saves the new allocation to the database
+6. If overlap → request is rejected and you see exactly which process caused the conflict
 
 ---
 
@@ -36,10 +40,10 @@ DSA_Interval_Tree/
 │
 ├── interval_tree.cpp       ← C++ interval tree + CLI wrapper (compile this)
 ├── interval_tree_cli.exe   ← compiled binary (generated after compiling)
-├── memtree_state.txt       ← C++ persists tree state here between calls
 │
-├── app.py                  ← Flask backend (all API routes)
-├── flask_state.json        ← Flask persists allocations here (auto-created)
+├── app.py                  ← Flask backend (all API routes + DB read/write)
+├── intervals.db            ← SQLite database (auto-created on first run)
+├── flask_state.json        ← Flask runtime config (auto-created)
 │
 └── index.html              ← Frontend UI (open this in browser)
 ```
@@ -51,9 +55,10 @@ DSA_Interval_Tree/
 - **Overlap detection** using an interval tree — O(log n) checks
 - **Visual memory map** — see all allocations as colored bars in real time
 - **Capacity management** — set total memory size, get warned when running low
-- **Persistent state** — restart Flask and nothing is lost
+- **Persistent state** — backed by SQLite; restart Flask and nothing is lost
 - **Free by dropdown** — select any active process and free it in one click
 - **Conflict details** — when an allocation fails, you see exactly which process it clashes with
+- **Pure-Python fallback** — Flask falls back to a Python overlap checker if the C++ binary isn't compiled yet
 
 ---
 
@@ -90,7 +95,7 @@ You should see:
 Running on http://127.0.0.1:5000
 ```
 
-Leave this terminal open.
+Flask will automatically create `intervals.db` on first launch. Leave this terminal open.
 
 ### 5. Open the UI
 
@@ -172,13 +177,22 @@ A overlaps B  ⟺  A.low <= B.high  AND  A.high >= B.low
 The C++ binary accepts 4 commands via command line:
 
 ```bash
-interval_tree_cli check  <low> <high>   # does [low,high] overlap anything?
-interval_tree_cli insert <low> <high>   # add interval to tree
-interval_tree_cli remove <low> <high>   # remove interval from tree
-interval_tree_cli status                # dump all intervals as JSON
+interval_tree_cli check  <low> <high> [<l1> <h1> ...]   # overlap check; existing intervals passed as args
+interval_tree_cli insert <low> <high>                    # ack only; Flask handles DB write
+interval_tree_cli remove <low> <high>                    # ack only; Flask handles DB delete
+interval_tree_cli status [<l1> <h1> ...]                 # dump intervals; existing intervals passed as args
 ```
 
-State is saved to `memtree_state.txt` so the tree persists between subprocess calls from Flask.
+### Persistence Architecture
+
+State is owned entirely by **Flask / SQLite**. C++ is a pure in-memory algorithm:
+
+| Who | Does what |
+|-----|-----------|
+| Flask (`app.py`) | All DB reads and writes — `SELECT`, `INSERT`, `DELETE`, `CREATE TABLE` |
+| C++ (`interval_tree_cli`) | Pure algorithm — receives intervals as CLI args, builds tree in memory, returns JSON |
+
+The C++ binary has **zero database dependency** — no SQLite headers, no file I/O.
 
 ---
 
@@ -192,7 +206,6 @@ Honestly, it's the simplest approach that works without any extra setup. No need
 
 - No memory compaction or defragmentation
 - Each process can only hold one allocation at a time
-- State is stored in flat files, not a real database
 - The interval tree is not self-balancing (no AVL/Red-Black)
 
 ---
@@ -201,11 +214,11 @@ Honestly, it's the simplest approach that works without any extra setup. No need
 
 | Layer | Technology |
 |-------|-----------|
-| Data structure | C++ (interval tree) |
+| Data structure | C++ (interval tree, pure in-memory) |
 | Backend API | Python / Flask |
 | Frontend | HTML + CSS + Vanilla JS |
 | Communication | REST (JSON over HTTP) |
-| State persistence | JSON file (Flask) + TXT file (C++) |
+| State persistence | SQLite (`intervals.db`) — owned by Flask |
 
 ---
 
